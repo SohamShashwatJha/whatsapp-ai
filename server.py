@@ -1,23 +1,37 @@
-from flask import Flask, request
+from flask import Response
 from twilio.twiml.messaging_response import MessagingResponse
+from openai import OpenAI
+import datetime
 import os
 
-app = Flask(__name__)
-
-# Health check (Railway uses this)
-@app.route("/")
-def health():
-    return "OK", 200
-
-
-# WhatsApp webhook (TEST VERSION)
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
     resp = MessagingResponse()
-    resp.message("Webhook reached. This is a test reply.")
-    return str(resp), 200
 
+    try:
+        incoming = request.form.get("Body", "").strip()
+        now = datetime.datetime.now().strftime("%A, %d %B, %I:%M %p")
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY missing")
+
+        client = OpenAI(api_key=api_key)
+
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a calm, direct accountability partner for Soham."},
+                {"role": "user", "content": f"It is {now}. Soham said: {incoming}"}
+            ],
+            timeout=10
+        )
+
+        reply = completion.choices[0].message.content
+
+    except Exception as e:
+        print("ERROR:", repr(e))
+        reply = "I got your message. Small glitch—trying again."
+
+    resp.message(reply)
+    return Response(str(resp), mimetype="application/xml"), 200
